@@ -2,6 +2,7 @@
    "name": "@scrypted/whip",
    "version": "0.0.0",
    "description": "WebRTC-HTTP Ingestion Protocol",
+   "license": "Apache",
    "keywords": [
       "scrypted",
       "plugin",
