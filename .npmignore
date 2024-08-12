@@ -1,0 +1,13 @@
+.DS_Store
+out/
+node_modules/
+*.map
+fs
+src
+.vscode
+dist/*.js
+dist/*.txt
+__pycache__
+*.pyc
+venv
+src/test.py

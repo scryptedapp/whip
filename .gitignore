@@ -1,0 +1,9 @@
+.DS_Store
+out/
+node_modules/
+dist/
+.venv
+venv
+*.pyc
+__pycache__
+src/test.py
