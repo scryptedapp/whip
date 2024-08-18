@@ -29,7 +29,8 @@
       "runtime": "python",
       "type": "API",
       "interfaces": [
-         "Settings"
+         "DeviceProvider",
+         "DeviceCreator"
       ]
    },
    "devDependencies": {
