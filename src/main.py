@@ -82,7 +82,7 @@ class WHIPDevice(ScryptedDeviceBase, HttpRequestHandler, Settings, VideoCamera):
 
     def __init__(self, nativeId: str | None = None) -> None:
         super().__init__(nativeId)
-        self.offer_fut = asyncio.Future()
+        self.pending_webrtc = asyncio.Queue()
 
     async def getSettings(self) -> list[Setting]:
         ip = await server_ip()
@@ -105,16 +105,19 @@ class WHIPDevice(ScryptedDeviceBase, HttpRequestHandler, Settings, VideoCamera):
         ]
 
     async def startRTCSignalingSession(self, scrypted_session):
+        offer_fut = asyncio.Future()
+        self.pending_webrtc.put_nowait(offer_fut)
+
         try:
-            offer, answer_fut = await asyncio.wait_for(asyncio.shield(self.offer_fut), timeout=5)
+            offer, answer_fut = await asyncio.wait_for(offer_fut, timeout=60)
         except asyncio.TimeoutError:
             self.print("Timeout waiting for camera offer")
             raise
+        except asyncio.CancelledError:
+            self.print("Session cancelled")
+            raise
 
         camera_session = WHIPSession(offer, answer_fut)
-
-        # new future for next request
-        self.offer_fut = asyncio.Future()
 
         scrypted_setup = {
             "type": "answer",
@@ -156,21 +159,35 @@ class WHIPDevice(ScryptedDeviceBase, HttpRequestHandler, Settings, VideoCamera):
             body = bytearray(body.get("data", "")).decode("utf-8")
 
             if not body:
+                response.send("No SDP provided", { "code": 400 })
                 return
 
-            if self.offer_fut.done():
-                self.offer_fut = asyncio.Future()
-            answer_fut = asyncio.Future()
-            self.offer_fut.set_result((body, answer_fut))
+            # do we have a pending connection?
+            if self.pending_webrtc.empty():
+                response.send("No pending connection", { "code": 503 })
+                return
 
-            answer = await asyncio.wait_for(answer_fut, timeout=60)
+            offer_fut: asyncio.Future = None
+            while not self.pending_webrtc.empty():
+                offer_fut = self.pending_webrtc.get_nowait()
+                if not offer_fut.done():
+                    break
+
+            if not offer_fut:
+                response.send("No pending connection", { "code": 503 })
+                return
+
+            answer_fut = asyncio.Future()
+            offer_fut.set_result((body, answer_fut))
+
+            answer = await asyncio.wait_for(answer_fut, timeout=1)
             response.send(answer, { "code": 201 })
         except asyncio.TimeoutError:
             self.print("Timeout waiting for Scrypted answer")
-            raise
+            response.send("Timeout waiting for answer", { "code": 504 })
         except Exception as e:
             self.print(f"Error processing request: {e}")
-            raise
+            response.send(f"Error processing request", { "code": 500 })
 
     async def getVideoStreamOptions(self) -> list[ResponseMediaStreamOptions]:
         return [
